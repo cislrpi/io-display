@@ -1,0 +1,29 @@
+{
+  "name": "@cisl/celio-display-worker",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "engines": {
+    "node": ">=6.0.0"
+  },
+  "contributors": [
+    {
+      "name": "Matthew Peveler",
+      "email": "pevelm@rpi.edu"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://internal.cisl.rpi.edu/code/libraries/celio-display-worker"
+  },
+  "publishConfig": {
+    "registry": "https://internal.cisl.rpi.edu/npm/"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "lodash": "^4.17.11"
+  },
+  "peerDependencies": {
+    "@cisl/celio": "^3.0.4"
+  }
+}
