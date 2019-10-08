@@ -1,6 +1,11 @@
-const DisplayWindow = require('./displaywindow');
-const ViewObject = require('./viewobject');
-const _ = require('lodash');
+import { Io } from '@cisl/io/io';
+import isEmpty from 'lodash.isempty';
+
+import { DisplayWindow } from './display-window';
+import { ViewObject } from './view-object';
+import { Response } from '@cisl/io/rabbitmq';
+
+import { ResponseContent } from './types';
 
 /**
  * @typedef {Promise.<Object>} display_rpc_result
@@ -29,8 +34,8 @@ const _ = require('lodash');
  * @property {boolean} uiDraggable - sets if the viewObject is draggable using a pointing device
  * @property {boolean} uiClosable - sets if the viewObject is closable using a pointing device
  * @property {Object} [position] - Specifies position in grid mode. ignores left and top if specified
- * @property {Number} [position.grid-left] - column position
- * @property {Number} [position.grid-top] - row position
+ * @property {Number} [position.gridLeft] - column position
+ * @property {Number} [position.gridTop] - row position
  * @property {Object} [slide] - Specifies sliding content in grid mode. Requires position object
  * @property {String} [direction] - values : 'left', 'right', 'down', 'up'
  * @property {boolean} [nodeIntegration] - specifies if the guest page needs to use Electron resources
@@ -54,51 +59,60 @@ const _ = require('lodash');
 /**
  * Class representing the DisplayContext object.
  */
-class DisplayContext {
+export class DisplayContext {
+  private io: Io;
+  public name: string;
+  private displayWindows: Map<string, DisplayWindow>;
+  private viewObjects: Map<string, ViewObject>;
+  private windowSettings: any;
+  private displayWorkerQuitHandler?: Function;
+
   /**
   * Creates an instance of DisplayContext.
   * @param {String} name Display context name
   * @param {Object.<String, window_settings>} window_settings - a collection of named window settings
   * @param {Object} io CELIO object instance
   */
-  constructor(name, window_settings, io) {
+  constructor(io: Io, name: string, windowSettings: any) {
+    if (!io.rabbit) {
+      throw new Error('could not find RabbitMQ instance');
+    }
     this.io = io;
     this.name = name;
     this.displayWindows = new Map();
     this.viewObjects = new Map();
-    if (!_.isEmpty(window_settings)) {
-      this.window_settings = window_settings;
-      for (let k of Object.keys(this.window_settings)) {
-        this.window_settings[k].windowName = k;
-        if (this.window_settings[k].displayName) {
-          this.window_settings[k].displayName = k;
+    if (!isEmpty(windowSettings)) {
+      this.windowSettings = windowSettings;
+      for (const k of Object.keys(this.windowSettings)) {
+        this.windowSettings[k].windowName = k;
+        if (this.windowSettings[k].displayName) {
+          this.windowSettings[k].displayName = k;
         }
       }
     }
 
-    this.io.mq.onTopic('display.removed', m => {
-      let closedDisplay = m.toString();
-      this._clean(closedDisplay);
+    this.io.rabbit!.onTopic('display.removed', (response) => {
+      this._clean((response.content as string));
     });
 
-    this.io.mq.onQueueDeleted((queue, headers) => {
-      if (queue.name.indexOf('rpc-display-') > -1) {
-        let closedDisplay = queue.name.replace('rpc-display-', '');
+    this.io.rabbit!.onQueueDeleted((queue_name) => {
+      if (queue_name.indexOf('rpc-display-') > -1) {
+        const closedDisplay = queue_name.replace('rpc-display-', '');
         this._clean(closedDisplay);
       }
     });
   }
 
-  _clean(closedDisplay) {
-    let closedWindows = [];
-    for (let [k, v] of this.displayWindows) {
+  _clean(closedDisplay: string) {
+    const closedWindows = [];
+    for (const [k, v] of this.displayWindows) {
       if (v.displayName === closedDisplay) {
         closedWindows.push(k);
       }
     }
     closedWindows.forEach(w => this.displayWindows.delete(w));
-    let vboToRemove = [];
-    for (let [k, v] of this.viewObjects) {
+    const vboToRemove = [];
+    for (const [k, v] of this.viewObjects) {
       if (v.displayName === closedDisplay) {
         vboToRemove.push(k);
       }
@@ -106,7 +120,7 @@ class DisplayContext {
     vboToRemove.forEach(v => this.viewObjects.delete(v));
 
     if (this.displayWorkerQuitHandler) {
-      let obj = {
+      const obj = {
         closedDisplay: closedDisplay,
         closedWindows: closedWindows,
         closedViewObjects: vboToRemove
@@ -115,23 +129,17 @@ class DisplayContext {
     }
   }
 
-  _on(topic, handler) {
-    this.io.mq.onTopic(topic, (msg, headers) => {
-      if (handler != null) {
-        handler(JSON.parse(msg.toString()), headers);
-      }
-    });
+  async _postRequest(displayName, data): Promise<object> {
+    const response = await this.io.rabbit!.publishRpc('rpc-display-' + displayName, data);
+    if (Buffer.isBuffer(response.content) || typeof response.content !== 'object') {
+      throw new Error('Invalid response type');
+    }
+    return response.content;
   }
 
-  _postRequest(displayName, data) {
-    return this.io.mq.call('rpc-display-' + displayName, JSON.stringify(data)).then(msg => {
-      return JSON.parse(msg.content.toString());
-    });
-  }
-
-  restoreFromDisplayWorkerStates(reset = false) {
+  restoreFromDisplayWorkerStates(reset = false): Promise<any> {
     // check for available display workers
-    let cmd = {
+    const cmd = {
       command: 'get-dw-context-windows-vbo',
       options: {
         context: this.name
@@ -142,23 +150,24 @@ class DisplayContext {
       this.displayWindows.clear();
       this.viewObjects.clear();
       let windowCount = 0;
-      states.forEach(state => {
+      (states as any[]).forEach(state => {
         if (state.windows) {
-          for (let k of Object.keys(state.windows)) {
-            let opts = state.windows[k];
+          for (const k of Object.keys(state.windows)) {
+            const opts = state.windows[k];
             windowCount++;
+            opts.displayContext = this;
             this.displayWindows.set(k, new DisplayWindow(this.io, opts));
           }
         }
         if (state.viewObjects) {
-          for (let k of Object.keys(state.viewObjects)) {
-            let wn = this.displayWindows.get(state.viewObjects[k]);
+          for (const k of Object.keys(state.viewObjects)) {
+            const wn = this.displayWindows.get(state.viewObjects[k]);
             if (wn) {
-              let opts = {
-                'view_id': k,
-                'displayName': wn.displayName,
-                'displayContext': this.name,
-                'windowName': wn.windowName
+              const opts = {
+                viewId: k,
+                displayName: wn.displayName,
+                displayContextName: this.name,
+                windowName: wn.windowName
               };
               this.viewObjects.set(k, new ViewObject(this.io, opts));
             }
@@ -186,19 +195,19 @@ class DisplayContext {
     });
   }
 
-  _executeInAvailableDisplays(cmd) {
-    return this.io.mq.getQueues().then(qs => {
-      let availableDisplayNames = [];
+  _executeInAvailableDisplays(cmd: object): Promise<any[]> {
+    return this.io.rabbit!.getQueues().then(qs => {
+      const availableDisplayNames = [];
       qs.forEach(queue => {
         if ((queue.state === 'running' || queue.state === 'live') && queue.name.indexOf('rpc-display-') > -1) {
           availableDisplayNames.push(queue.name);
         }
       });
 
-      let _ps = [];
+      const _ps = [];
       availableDisplayNames.forEach(dm => {
-        _ps.push(this.io.mq.call(dm, JSON.stringify(cmd)).then(msg => {
-          return JSON.parse(msg.content.toString());
+        _ps.push(this.io.rabbit!.publishRpc(dm, cmd).then(response => {
+          return (response.content as object);
         }));
       });
       if (_ps.length > 0) {
@@ -217,25 +226,25 @@ class DisplayContext {
    * @returns {Promise.<Object>} A map of windowNames with bounds
    */
   getWindowBounds() {
-    if (this.window_settings && !_.isEmpty(this.window_settings)) {
-      return Promise.resolve(this.window_settings);
+    if (this.windowSettings && !isEmpty(this.windowSettings)) {
+      return Promise.resolve(this.windowSettings);
     }
     else {
       // get existing context state from display workers
-      let cmd = {
+      const cmd = {
         command: 'get-window-bounds',
         options: {
           context: this.name
         }
       };
       return this._executeInAvailableDisplays(cmd).then(bounds => {
-        let boundMap = {};
+        const boundMap = {};
         for (let x = 0; x < bounds.length; x++) {
-          for (let k of Object.keys(bounds[x])) {
+          for (const k of Object.keys(bounds[x])) {
             boundMap[k] = bounds[x][k];
           }
         }
-        this.window_settings = boundMap;
+        this.windowSettings = boundMap;
         return Promise.resolve(boundMap);
       });
     }
@@ -263,15 +272,16 @@ class DisplayContext {
    * @returns {display_rpc_result} returns a status object
    */
   show() {
-    let cmd = {
+    const cmd = {
       command: 'set-display-context',
       options: {
         context: this.name
       }
     };
     return this._executeInAvailableDisplays(cmd).then(m => {
-      this.io.store.setState('display:activeDisplayContext', this.name);
-      return m;
+      this.io.store.getset('display:activeDisplayContext', this.name).then(() => {
+        return m;
+      });
     });
   }
 
@@ -280,7 +290,7 @@ class DisplayContext {
    * @returns {display_rpc_result} returns a status object
    */
   hide() {
-    let cmd = {
+    const cmd = {
       command: 'hide-display-context',
       options: {
         context: this.name
@@ -294,17 +304,17 @@ class DisplayContext {
   * @returns {display_rpc_result} returns a status object
   */
   close() {
-    let cmd = {
+    const cmd = {
       command: 'close-display-context',
       options: {
         context: this.name
       }
     };
     return this._executeInAvailableDisplays(cmd).then(m => {
-      let map = [];
+      const map = [];
       let isHidden = false;
       for (let i = 0; i < m.length; i++) {
-        let res = m[i];
+        const res = m[i];
         if (res.command === 'hide-display-context') {
           isHidden = true;
         }
@@ -313,13 +323,13 @@ class DisplayContext {
       if (!isHidden) {
         this.displayWindows.clear();
         this.viewObjects.clear();
-        this.io.store.getState('display:activeDisplayContext').then(x => {
+        this.io.store.get('display:activeDisplayContext').then(x => {
           if (x === this.name) {
             // clearing up active display context in store
             this.io.store.del('display:activeDisplayContext');
           }
         });
-        this.io.mq.publishTopic('display.displayContext.closed', JSON.stringify({
+        this.io.rabbit!.publishTopic('display.displayContext.closed', JSON.stringify({
           'type': 'displayContextClosed',
           'details': map
         }));
@@ -333,27 +343,27 @@ class DisplayContext {
   * @returns {display_rpc_result} returns a status object
   */
   reloadAll() {
-    let _ps = [];
-    for (let [k, v] of this.viewObjects) {
-      _ps.push(v.reload());
+    const _ps = [];
+    for (const viewObject of this.viewObjects.values()) {
+      _ps.push(viewObject.reload());
     }
 
     return Promise.all(_ps);
   }
 
   initialize(options) {
-    if (_.isEmpty(options)) {
+    if (isEmpty(options)) {
       return new Promise((resolve, reject) => {
         reject(new Error('Cannot initialize display context without proper window_settings.'));
       });
     }
     else {
       return this.show().then(() => {
-        let _ps = [];
+        const _ps = [];
         // creating displaywindows
-        for (let k of Object.keys(options)) {
+        for (const k of Object.keys(options)) {
           options[k].template = 'index.html';
-          let cmd = {
+          const cmd = {
             command: 'create-window',
             options: options[k]
           };
@@ -361,10 +371,11 @@ class DisplayContext {
         }
         return Promise.all(_ps);
       }).then(m => {
-        let map = {};
+        const map = {};
         for (let i = 0; i < m.length; i++) {
-          let res = m[i];
+          const res = m[i];
           map[res.windowName] = res;
+          res.displayContext = this;
           this.displayWindows.set(res.windowName, new DisplayWindow(this.io, res));
         }
         return map;
@@ -373,11 +384,11 @@ class DisplayContext {
   }
 
   /**
-  * gets a viewObject by id
+  * gets a viewObject
   * @param {String} id - an uuid of the viewobject
   * @returns {ViewObject} returns the ViewObject instance
   */
-  getViewObjectByIdSync(id) {
+  getViewObject(id: string): ViewObject {
     return this.viewObjects.get(id);
   }
 
@@ -385,7 +396,7 @@ class DisplayContext {
     * gets all viewObjects
     * @returns {Map.<String, ViewObject>} returns the collection of ViewObject instances
     */
-  getViewObjectsSync() {
+  getViewObjects(): Map<string, ViewObject> {
     return this.viewObjects;
   }
 
@@ -394,14 +405,14 @@ class DisplayContext {
    * @returns {Map.<Buffer>} returns a map of screenshot image buffer with windowNames as key and image Buffer as value
    */
   captureDisplayWindows() {
-    let _ps = [];
-    let _dispNames = [];
-    for (let [k, v] of this.displayWindows) {
+    const _ps = [];
+    const _dispNames = [];
+    for (const [k, v] of this.displayWindows) {
       _ps.push(v.capture());
       _dispNames.push(k);
     }
     return Promise.all(_ps).then(m => {
-      let resMap = new Map();
+      const resMap = new Map();
       for (let i = 0; i < m.length && i < _dispNames.length; i++) {
         resMap.set(_dispNames[i], m[i]);
       }
@@ -413,45 +424,38 @@ class DisplayContext {
    * Creates a view object
    * @param {viewobject_options} options - view object options
    * @param {String} [windowName='main'] - window name
-   * @returns {ViewObject} returns the ViewObject instance
+   * @returns {Promise<ViewObject>} returns the ViewObject instance
    */
-  createViewObject(options, windowName = 'main') {
+  async createViewObject(options: any, windowName = 'main'): Promise<ViewObject> {
     options.displayContext = this.name;
     if (this.displayWindows.has(windowName)) {
-      return this.displayWindows.get(windowName).createViewObject(options).then(vo => {
-        this.viewObjects.set(vo.view_id, vo);
-        let map = {};
-        for (let [k, v] of this.viewObjects) {
-          map[k] = v.windowName;
-        }
-        return vo;
-      });
+      const viewObject = await this.displayWindows.get(windowName).createViewObject(options);
+      this.viewObjects.set(viewObject.viewId, viewObject);
+      const map = {};
+      for (const [k, v] of this.viewObjects) {
+        map[k] = v.windowName;
+      }
+      return viewObject;
     }
     else {
-      return this.getWindowBounds().then(bounds => {
-        let windowNameCheck = false;
-        for (let k of Object.keys(bounds)) {
-          if (bounds[k].displayName === undefined) {
-            bounds[k].displayName = k;
-          }
-          if (windowName === k) {
-            windowNameCheck = true;
-          }
-          bounds[k].windowName = k;
-          bounds[k].template = 'index.html';
-          bounds[k].displayContext = this.name;
+      const bounds = this.getWindowBounds();
+      let windowNameCheck = false;
+      for (const k of Object.keys(bounds)) {
+        if (bounds[k].displayName === undefined) {
+          bounds[k].displayName = k;
         }
-        return new Promise((resolve, reject) => {
-          if (windowNameCheck) {
-            this.initialize(bounds);
-          }
-          else {
-            reject(new Error(`windowName ${windowName} is not defined by the user. Inferencing based on existing display-workers also failed.`));
-          }
-        });
-      }).then(m => {
-        return this.createViewObject(options, windowName);
-      });
+        if (windowName === k) {
+          windowNameCheck = true;
+        }
+        bounds[k].windowName = k;
+        bounds[k].template = 'index.html';
+        bounds[k].displayContext = this.name;
+      }
+      if (!windowNameCheck) {
+        throw new Error(`windowName ${windowName} is not defined by the user. Inferencing based on existing display-workers also failed.`);
+      }
+      await this.initialize(bounds);
+      return await this.createViewObject(options, windowName);
     }
   }
 
@@ -459,12 +463,12 @@ class DisplayContext {
    * DisplayContext closed event
    * @param {displayContextClosedEventCallback} handler - event handler
    */
-  onClosed(handler) {
-    this.io.mq.onTopic('display.displayContext.closed', (msg, headers) => {
+  onClosed(handler: (content: ResponseContent, response: Response) => void): void {
+    this.io.rabbit!.onTopic('display.displayContext.closed', (response) => {
       if (handler != null) {
-        let m = JSON.parse(msg.toString());
-        if (m.details.closedDisplayContext === this.name) {
-          handler(m, headers);
+        const content = (response.content as ResponseContent);
+        if (content.details.closedDisplayContextName === this.name) {
+          handler(content, response);
         }
       }
     });
@@ -474,12 +478,12 @@ class DisplayContext {
    * DisplayContext changed event
    * @param {displayContextChangedEventCallback} handler - event handler
    */
-  onActivated(handler) {
-    this.io.mq.onTopic('display.displayContext.changed', (msg, headers) => {
+  onActivated(handler: (content: ResponseContent, response: Response) => void): void {
+    this.io.rabbit!.onTopic('display.displayContext.changed', (response) => {
       if (handler != null) {
-        let m = JSON.parse(msg.toString());
-        if (m.details.displayContext === this.name) {
-          handler(m, headers);
+        const content = (response.content as ResponseContent);
+        if (content.details.displayContext === this.name) {
+          handler(content, response);
         }
       }
     });
@@ -489,12 +493,12 @@ class DisplayContext {
    * DisplayContext changed event
    * @param {displayContextChangedEventCallback} handler - event handler
    */
-  onDeactivated(handler) {
-    this.io.mq.onTopic('display.displayContext.changed', (msg, headers) => {
+  onDeactivated(handler: (content: ResponseContent, response: Response) => void): void {
+    this.io.rabbit!.onTopic('display.displayContext.changed', (response) => {
       if (handler != null) {
-        let m = JSON.parse(msg.toString());
-        if (m.details.lastDisplayContext === this.name) {
-          handler(m, headers);
+        const content = (response.content as ResponseContent);
+        if (content.details.lastDisplayContext === this.name) {
+          handler(content, response);
         }
       }
     });
@@ -508,5 +512,3 @@ class DisplayContext {
     this.displayWorkerQuitHandler = handler;
   }
 }
-
-module.exports = DisplayContext;

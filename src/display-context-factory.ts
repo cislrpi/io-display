@@ -1,4 +1,6 @@
-const DisplayContext = require('./displaycontext');
+import { DisplayContext } from './display-context';
+import { Io } from '@cisl/io/io';
+import { Response } from '@cisl/io/rabbitmq';
 
 /**
  * @typedef {Object} focus_window
@@ -99,11 +101,16 @@ const DisplayContext = require('./displaycontext');
 /**
  * Class representing the DisplayContextFactory object.
  */
-class DisplayContextFactory {
+export class DisplayContextFactory {
+  private io: Io;
+
   /**
    * Use {@link CELIO#displayContext} instead.
    */
-  constructor(io) {
+  constructor(io: Io) {
+    if (!io.rabbit) {
+      throw new Error('could not find RabbitMQ instance');
+    }
     this.io = io;
   }
 
@@ -112,27 +119,27 @@ class DisplayContextFactory {
   * @returns {Promise} A ES2015 Map object with displayNames as keys and bounds as values.
   */
   getDisplays() {
-    return this.io.mq.getQueues().then(qs => {
-      let availableDisplayNames = [];
+    return this.io.rabbit!.getQueues().then(qs => {
+      const availableDisplayNames: Array<string> = [];
       qs.forEach(queue => {
         if ((queue.state === 'running' || queue.state === 'live') && queue.name.indexOf('rpc-display-') > -1) {
           availableDisplayNames.push(queue.name);
         }
       });
       // get existing context state from display workers
-      let cmd = {
+      const cmd = {
         command: 'get-display-bounds'
       };
-      let _ps = [];
+      const _ps: Array<any> = [];
       availableDisplayNames.forEach(dm => {
-        _ps.push(this.io.mq.call(dm, JSON.stringify(cmd)).then(msg => {
-          return JSON.parse(msg.content.toString());
+        _ps.push(this.io.rabbit!.publishRpc(dm, cmd).then(response => {
+          return response.content;
         }));
       });
       return Promise.all(_ps);
     }).then(bounds => {
-      let boundMap = new Map();
-      for (let bound of bounds) {
+      const boundMap = new Map();
+      for (const bound of bounds) {
         boundMap.set(bound.displayName, bound.bounds);
       }
       return boundMap;
@@ -144,21 +151,21 @@ class DisplayContextFactory {
   * @returns {Promise} An array of String containing display context names.
   */
   list() {
-    return this.io.mq.getQueues().then(qs => {
-      let availableDisplayNames = [];
+    return this.io.rabbit!.getQueues().then(qs => {
+      const availableDisplayNames: Array<string> = [];
       qs.forEach(queue => {
         if ((queue.state === 'running' || queue.state === 'live') && queue.name.indexOf('rpc-display-') > -1) {
           availableDisplayNames.push(queue.name);
         }
       });
       // get existing context state from display workers
-      let cmd = {
+      const cmd = {
         command: 'get-context-list'
       };
-      let _ps = [];
+      const _ps: any[] = [];
       availableDisplayNames.forEach(dm => {
-        _ps.push(this.io.mq.call(dm, JSON.stringify(cmd)).then(msg => {
-          return JSON.parse(msg.content.toString());
+        _ps.push(this.io.rabbit!.publishRpc(dm, JSON.stringify(cmd)).then(response => {
+          return response.content;
         }));
       });
       return Promise.all(_ps);
@@ -175,20 +182,16 @@ class DisplayContextFactory {
   * gets the activelist display contexts.
   * @returns {Promise} An array of String containing display context names.
   */
-  getActive() {
-    return this.io.store.getState('display:activeDisplayContext').then(m => {
-      if (m) {
-        let _dc = new DisplayContext(m, {}, this.io);
-        return _dc.restoreFromDisplayWorkerStates().then(m => {
-          return _dc;
-        });
-      }
-      else {
-        return new Promise((resolve, reject) => {
-          return reject(new Error('No display context is active'));
-        });
-      }
-    });
+  async getActive(): Promise<DisplayContext> {
+    const m = await this.io.store.get('display:activeDisplayContext');
+    if (m) {
+      const _dc = new DisplayContext(this.io, m, {});
+      await _dc.restoreFromDisplayWorkerStates();
+      return _dc;
+    }
+    else {
+      throw new Error('No display context is active');
+    }
   }
 
   /**
@@ -197,27 +200,25 @@ class DisplayContextFactory {
   * @param {boolean} [reset=false] if the viewObjects of the displayContext need to be reloaded.
   * @returns {Promise} return false if the display context name is already active.
   */
-  setActive(display_ctx_name, reset = false) {
+  async setActive(display_ctx_name: string, reset = false): Promise<string | boolean> {
     // since setState first gets old value and sets the new value at the sametime,
     // calling this function within multiple display workers ensures this function is executed only once.
-    return this.io.store.setState('display:activeDisplayContext', display_ctx_name).then(name => {
-      if (name !== display_ctx_name) {
-        return (new DisplayContext(display_ctx_name, {}, this.io)).restoreFromDisplayWorkerStates(reset).then(m => {
-          this.io.mq.publishTopic('display.displayContext.changed', JSON.stringify({
-            'type': 'displayContextChanged',
-            'details': {
-              'displayContext': display_ctx_name,
-              'lastDisplayContext': name
-            }
-          }));
-          return m;
-        });
-      }
-      else {
-        // return false when the context is already active
-        return false;
-      }
-    });
+    const name = await this.io.store.getset('display:activeDisplayContext', display_ctx_name);
+    if (name !== display_ctx_name) {
+      const m = await (new DisplayContext(this.io, display_ctx_name, {})).restoreFromDisplayWorkerStates(reset);
+      this.io.mq.publishTopic('display.displayContext.changed', {
+        'type': 'displayContextChanged',
+        'details': {
+          'displayContext': display_ctx_name,
+          'lastDisplayContext': name
+        }
+      });
+      return m;
+    }
+    else {
+      // return false when the context is already active
+      return false;
+    }
   }
 
   /**
@@ -272,17 +273,16 @@ class DisplayContextFactory {
   }
 }
   */
-  create(display_ctx_name, window_settings = {}) {
-    let _dc = new DisplayContext(display_ctx_name, window_settings, this.io);
-    return _dc.restoreFromDisplayWorkerStates().then(m => {
-      this.io.mq.publishTopic('display.displayContext.created', JSON.stringify({
-        type: 'displayContextCreated',
-        details: {
-          displayContext: display_ctx_name
-        }
-      }));
-      return _dc;
-    });
+  async create(display_ctx_name: string, window_settings = {}): Promise<DisplayContext> {
+    const _dc = new DisplayContext(this.io, display_ctx_name, window_settings);
+    await _dc.restoreFromDisplayWorkerStates();
+    this.io.mq.publishTopic('display.displayContext.created', JSON.stringify({
+      type: 'displayContextCreated',
+      details: {
+        displayContext: display_ctx_name
+      }
+    }));
+    return _dc;
   }
 
   /**
@@ -290,13 +290,13 @@ class DisplayContextFactory {
   * @returns {Promise<Object>} A array of JSON object containing status of hide function execution at all display workers.
   */
   hideAll() {
-    let cmd = {
+    const cmd = {
       command: 'hide-all-windows'
     };
     return this.getDisplays().then(m => {
-      let _ps = [];
-      for (let [k] of m) {
-        _ps.push(this.io.mq.call('rpc-display-' + k, JSON.stringify(cmd)).then(m => JSON.parse(m.content)));
+      const _ps = [];
+      for (const [k] of m) {
+        _ps.push(this.io.rabbit!.publishRpc('rpc-display-' + k, cmd).then(m => m.content));
       }
       return Promise.all(_ps);
     }).then(m => {
@@ -311,10 +311,10 @@ class DisplayContextFactory {
    * @returns {Promise.<focus_window>} - A JSON object with window details.
    */
   getFocusedWindow(displayName = 'main') {
-    let cmd = {
+    const cmd = {
       command: 'get-focus-window'
     };
-    return this.io.mq.call('rpc-display-' + displayName, JSON.stringify(cmd)).then(m => JSON.parse(m.content));
+    return this.io.rabbit!.publishRpc('rpc-display-' + displayName, cmd).then(m => m.content);
   }
 
   /**
@@ -322,22 +322,22 @@ class DisplayContextFactory {
    * @returns {Promise.<Array.<focus_window>>} - An array of JSON object with window details.
    */
   getFocusedWindows() {
-    let cmd = {
+    const cmd = {
       command: 'get-focus-window'
     };
     return this.getDisplays().then(m => {
-      let _ps = [];
-      for (let [k] of m) {
-        _ps.push(this.io.mq.call('rpc-display-' + k, JSON.stringify(cmd)).then(m => JSON.parse(m.content)));
+      const _ps = [];
+      for (const [k] of m) {
+        _ps.push(this.io.rabbit!.publishRpc('rpc-display-' + k, cmd).then(m => m.content));
       }
       return Promise.all(_ps);
     });
   }
 
-  _on(topic, handler) {
-    this.io.mq.onTopic(topic, (msg, headers) => {
+  _on(topic: string, handler: (content: Buffer | string | number | object, response: Response) => void): void {
+    this.io.rabbit!.onTopic(topic, (response) => {
       if (handler != null) {
-        handler(JSON.parse(msg.toString()), headers);
+        handler(response.content, response);
       }
     });
   }
@@ -462,5 +462,3 @@ class DisplayContextFactory {
     this._on('display.added', handler);
   }
 }
-
-module.exports = DisplayContextFactory;

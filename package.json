@@ -12,6 +12,12 @@
       "email": "pevelm@rpi.edu"
     }
   ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "lint": "eslint src/*",
+    "lint:fix": "eslint --fix src/*"
+  },
   "repository": {
     "type": "git",
     "url": "https://internal.cisl.rpi.edu/code/libraries/celio-display-worker"
@@ -21,9 +27,17 @@
   },
   "license": "MIT",
   "dependencies": {
-    "lodash": "^4.17.11"
+    "@types/lodash.isempty": "^4.4.6",
+    "lodash.isempty": "^4.4.0"
   },
   "peerDependencies": {
-    "@cisl/celio": "^3.0.4"
+    "@cisl/io": "*"
+  },
+  "devDependencies": {
+    "@cisl/io": "^1.0.0-dev12",
+    "@typescript-eslint/eslint-plugin": "^2.3.3",
+    "@typescript-eslint/parser": "^2.3.3",
+    "eslint": "^6.5.1",
+    "typescript": "^3.6.3"
   }
 }
