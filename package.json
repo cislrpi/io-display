@@ -1,6 +1,6 @@
 {
   "name": "@cisl/celio-display-worker",
-  "version": "0.0.1",
+  "version": "1.0.0-dev1",
   "description": "",
   "main": "index.js",
   "engines": {
@@ -16,7 +16,9 @@
     "build": "tsc",
     "watch": "tsc -w",
     "lint": "eslint src/*",
-    "lint:fix": "eslint --fix src/*"
+    "lint:fix": "eslint --fix src/*",
+    "prepublishOnly": "echo \"Do not run publish directly, run tsc-publish\" && exit 1",
+    "tsc-publish": "tsc-publish"
   },
   "repository": {
     "type": "git",
@@ -38,6 +40,7 @@
     "@typescript-eslint/eslint-plugin": "^2.3.3",
     "@typescript-eslint/parser": "^2.3.3",
     "eslint": "^6.5.1",
+    "tsc-publish": "^0.3.0",
     "typescript": "^3.6.3"
   }
 }
