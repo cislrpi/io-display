@@ -50,7 +50,7 @@ export class DisplayWorker {
     }
     bounds.contentGrid = contentGrid;
     bounds.displayName = name;
-    this.displayContext = await this.displayContextFactory.create(display, {main: bounds });
+    this.displayContext = await this.displayContextFactory.create(display, {main: bounds});
     const displayWindow = this.displayContext.getDisplayWindowSync(name);
     await displayWindow.clearContents();
     const uniformGridCellSize = await displayWindow.getUniformGridCellSize();

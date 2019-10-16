@@ -6,3 +6,12 @@ export interface ResponseContent {
     [key: string]: string;
   };
 }
+
+export interface Bounds {
+  displayName?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  contentGrid?: any;
+}

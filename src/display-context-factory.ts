@@ -2,6 +2,13 @@ import { DisplayContext } from './display-context';
 import { Io } from '@cisl/io/io';
 import { Response } from '@cisl/io/rabbitmq';
 
+import { Bounds } from './types';
+
+interface BoundsResponse {
+  displayName: string;
+  bounds: Bounds;
+}
+
 /**
  * @typedef {Object} focus_window
  * @property {string} status success or rejects with an Error message
@@ -118,32 +125,30 @@ export class DisplayContextFactory {
   * gets the Display Workers details running in the environment.
   * @returns {Promise} A ES2015 Map object with displayNames as keys and bounds as values.
   */
-  getDisplays() {
-    return this.io.rabbit!.getQueues().then(qs => {
-      const availableDisplayNames: Array<string> = [];
-      qs.forEach(queue => {
-        if ((queue.state === 'running' || queue.state === 'live') && queue.name.indexOf('rpc-display-') > -1) {
-          availableDisplayNames.push(queue.name);
-        }
-      });
-      // get existing context state from display workers
-      const cmd = {
-        command: 'get-display-bounds'
-      };
-      const _ps: Array<any> = [];
-      availableDisplayNames.forEach(dm => {
-        _ps.push(this.io.rabbit!.publishRpc(dm, cmd).then(response => {
-          return response.content;
-        }));
-      });
-      return Promise.all(_ps);
-    }).then(bounds => {
-      const boundMap = new Map();
-      for (const bound of bounds) {
-        boundMap.set(bound.displayName, bound.bounds);
+  async getDisplays(): Promise<Map<string, Bounds>> {
+    const queues = await this.io.rabbit!.getQueues();
+    const availableDisplayNames: Array<string> = [];
+    queues.forEach(queue => {
+      if ((queue.state === 'running' || queue.state === 'live') && queue.name.indexOf('rpc-display-') > -1) {
+        availableDisplayNames.push(queue.name);
       }
-      return boundMap;
     });
+    // get existing context state from display workers
+    const cmd = {
+      command: 'get-display-bounds'
+    };
+    const _ps: Array<any> = [];
+    availableDisplayNames.forEach(dm => {
+      _ps.push(this.io.rabbit!.publishRpc(dm, cmd).then(response => {
+        return response.content;
+      }));
+    });
+    const bounds = (await Promise.all(_ps) as BoundsResponse[]);
+    const boundMap = new Map();
+    for (const bound of bounds) {
+      boundMap.set(bound.displayName, bound.bounds);
+    }
+    return boundMap;
   }
 
   /**
@@ -164,7 +169,7 @@ export class DisplayContextFactory {
       };
       const _ps: any[] = [];
       availableDisplayNames.forEach(dm => {
-        _ps.push(this.io.rabbit!.publishRpc(dm, JSON.stringify(cmd)).then(response => {
+        _ps.push(this.io.rabbit!.publishRpc(dm, cmd).then(response => {
           return response.content;
         }));
       });
@@ -196,9 +201,9 @@ export class DisplayContextFactory {
 
   /**
   * sets a display context active. Making a display context active ensures only windows of the display context are visible. Windows from other display contexts are hidden.
-  * @param {string} display_ctx_name - display context name.
-  * @param {boolean} [reset=false] if the viewObjects of the displayContext need to be reloaded.
-  * @returns {Promise} return false if the display context name is already active.
+  * @param display_ctx_name - display context name.
+  * @param reset=false if the viewObjects of the displayContext need to be reloaded.
+  * @returns return false if the display context name is already active.
   */
   async setActive(display_ctx_name: string, reset = false): Promise<string | boolean> {
     // since setState first gets old value and sets the new value at the sametime,
@@ -276,12 +281,12 @@ export class DisplayContextFactory {
   async create(display_ctx_name: string, window_settings = {}): Promise<DisplayContext> {
     const _dc = new DisplayContext(this.io, display_ctx_name, window_settings);
     await _dc.restoreFromDisplayWorkerStates();
-    this.io.mq.publishTopic('display.displayContext.created', JSON.stringify({
+    this.io.rabbit.publishTopic('display.displayContext.created', {
       type: 'displayContextCreated',
       details: {
         displayContext: display_ctx_name
       }
-    }));
+    });
     return _dc;
   }
 
@@ -289,20 +294,18 @@ export class DisplayContextFactory {
   * hides all display contexts. If the display context already exists, it is made active and a DisplayContext Object is restored from store.
   * @returns {Promise<Object>} A array of JSON object containing status of hide function execution at all display workers.
   */
-  hideAll() {
+  async hideAll() {
     const cmd = {
       command: 'hide-all-windows'
     };
-    return this.getDisplays().then(m => {
-      const _ps = [];
-      for (const [k] of m) {
-        _ps.push(this.io.rabbit!.publishRpc('rpc-display-' + k, cmd).then(m => m.content));
-      }
-      return Promise.all(_ps);
-    }).then(m => {
-      this.io.store.del('display:activeDisplayContext');
-      return m;
-    });
+    const displays = await this.getDisplays();
+    const _ps = [];
+    for (const [k] of displays) {
+      _ps.push(this.io.rabbit!.publishRpc('rpc-display-' + k, cmd).then(m => m.content));
+    }
+    const m = await Promise.all(_ps);
+    this.io.store.del('display:activeDisplayContext');
+    return m;
   }
 
   /**
