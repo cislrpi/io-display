@@ -1,23 +1,26 @@
-# @cisl/celio-display-worker
+# @cisl/io-display-worker
 
-Module for `@cisl/celio` that wraps the interface for the display-worker to make it easier to work with.
+Module for `@cisl/io` that wraps the interface for the display-worker to make it easier to work with.
 
 ## Installation
 ```bash
-npm install @cisl/celio-display-worker
+npm install @cisl/io-display-worker
 ```
 
 ## Usage
 ```js
-const io = require('@cisl/celio');
-let contentGrid = {
-  contentGrid: {
-    row: 4,
-    col: 12,
-    padding: 0
-  }
-}
-io.display.openDisplayWorker('main', 'm_and_a', contentGrid).then((displayContext, uniformGridCellSize) => {
-    // ...
-})
+const io = require('@cisl/io');
+const { registerDisplayWorker } = require('./dist');
+
+io.registerPlugins(registerDisplayWorker);
+io.display.openDisplayWorker('main', 'test', content_grid).then((response) => {
+  io.display.displayUrl('https://example.com', {
+    position: {
+      gridLeft: 1,
+      gridTop: 1
+    },
+    widthFactor: 2,
+    heightFactor: 2
+  });
+});
 ```
