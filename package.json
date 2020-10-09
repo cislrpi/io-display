@@ -1,6 +1,6 @@
 {
-  "name": "@cisl/io-display-worker",
-  "version": "1.0.0-dev1",
+  "name": "@cisl/io-display",
+  "version": "1.0.0-dev.1",
   "description": "",
   "main": "index.js",
   "engines": {
@@ -33,10 +33,10 @@
     "lodash.isempty": "^4.4.0"
   },
   "peerDependencies": {
-    "@cisl/io": "*"
+    "@cisl/io": ">= 1.0.0-dev.19"
   },
   "devDependencies": {
-    "@cisl/io": "^1.0.0-dev12",
+    "@cisl/io": "^1.0.0-dev.24",
     "@typescript-eslint/eslint-plugin": "^2.3.3",
     "@typescript-eslint/parser": "^2.3.3",
     "eslint": "^6.5.1",

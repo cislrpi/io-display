@@ -1,5 +1,5 @@
 import { Io } from '@cisl/io/io';
-import { Response } from '@cisl/io/rabbitmq';
+import { RabbitMessage } from '@cisl/io/types';
 import { ViewObject, ViewObjectOptions } from './view-object';
 import { DisplayContext } from './display-context';
 
@@ -108,7 +108,7 @@ export class DisplayWindow {
   }
 
   _postRequest(data: object): Promise<object> {
-    return this.io.rabbit!.publishRpc('rpc-display-' + this.displayName, data).then((response: Response) => {
+    return this.io.rabbit!.publishRpc('rpc-display-' + this.displayName, data).then((response: RabbitMessage) => {
       if (Buffer.isBuffer(response.content) || typeof response.content !== 'object') {
         throw new Error('invalid response content');
       }

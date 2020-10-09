@@ -3,7 +3,7 @@ import isEmpty from 'lodash.isempty';
 
 import { DisplayWindow } from './display-window';
 import { ViewObject } from './view-object';
-import { Response } from '@cisl/io/rabbitmq';
+import { RabbitMessage } from '@cisl/io/types';
 
 import { ResponseContent } from './types';
 
@@ -279,7 +279,7 @@ export class DisplayContext {
       }
     };
     return this._executeInAvailableDisplays(cmd).then(m => {
-      this.io.store.getset('display:activeDisplayContext', this.name).then(() => {
+      this.io.redis!.getset('display:activeDisplayContext', this.name).then(() => {
         return m;
       });
     });
@@ -323,10 +323,10 @@ export class DisplayContext {
       if (!isHidden) {
         this.displayWindows.clear();
         this.viewObjects.clear();
-        this.io.store.get('display:activeDisplayContext').then(x => {
+        this.io.redis!.get('display:activeDisplayContext').then(x => {
           if (x === this.name) {
             // clearing up active display context in store
-            this.io.store.del('display:activeDisplayContext');
+            this.io.redis!.del('display:activeDisplayContext');
           }
         });
         this.io.rabbit!.publishTopic('display.displayContext.closed', JSON.stringify({
@@ -463,7 +463,7 @@ export class DisplayContext {
    * DisplayContext closed event
    * @param {displayContextClosedEventCallback} handler - event handler
    */
-  onClosed(handler: (content: ResponseContent, response: Response) => void): void {
+  onClosed(handler: (content: ResponseContent, response: RabbitMessage) => void): void {
     this.io.rabbit!.onTopic('display.displayContext.closed', (response) => {
       if (handler != null) {
         const content = (response.content as ResponseContent);
@@ -478,7 +478,7 @@ export class DisplayContext {
    * DisplayContext changed event
    * @param {displayContextChangedEventCallback} handler - event handler
    */
-  onActivated(handler: (content: ResponseContent, response: Response) => void): void {
+  onActivated(handler: (content: ResponseContent, response: RabbitMessage) => void): void {
     this.io.rabbit!.onTopic('display.displayContext.changed', (response) => {
       if (handler != null) {
         const content = (response.content as ResponseContent);
@@ -493,7 +493,7 @@ export class DisplayContext {
    * DisplayContext changed event
    * @param {displayContextChangedEventCallback} handler - event handler
    */
-  onDeactivated(handler: (content: ResponseContent, response: Response) => void): void {
+  onDeactivated(handler: (content: ResponseContent, response: RabbitMessage) => void): void {
     this.io.rabbit!.onTopic('display.displayContext.changed', (response) => {
       if (handler != null) {
         const content = (response.content as ResponseContent);

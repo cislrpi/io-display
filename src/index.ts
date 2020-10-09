@@ -1,3 +1,4 @@
+import cislio from '@cisl/io';
 import { Io } from '@cisl/io/io';
 import { DisplayContextFactory } from './display-context-factory';
 import { DisplayContext } from './display-context';
@@ -86,3 +87,6 @@ export function registerDisplayWorker(io: Io): void {
   }
   io.display = new DisplayWorker(io);
 }
+
+console.log('what');
+cislio.registerPlugins(registerDisplayWorker);

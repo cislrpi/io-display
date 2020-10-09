@@ -1,6 +1,6 @@
 import { DisplayContext } from './display-context';
 import { Io } from '@cisl/io/io';
-import { Response } from '@cisl/io/rabbitmq';
+import { RabbitMessage } from '@cisl/io/types';
 
 import { Bounds } from './types';
 
@@ -188,7 +188,7 @@ export class DisplayContextFactory {
   * @returns {Promise} An array of String containing display context names.
   */
   async getActive(): Promise<DisplayContext> {
-    const m = await this.io.store.get('display:activeDisplayContext');
+    const m = await this.io.redis!.get('display:activeDisplayContext');
     if (m) {
       const _dc = new DisplayContext(this.io, m, {});
       await _dc.restoreFromDisplayWorkerStates();
@@ -208,10 +208,10 @@ export class DisplayContextFactory {
   async setActive(display_ctx_name: string, reset = false): Promise<string | boolean> {
     // since setState first gets old value and sets the new value at the sametime,
     // calling this function within multiple display workers ensures this function is executed only once.
-    const name = await this.io.store.getset('display:activeDisplayContext', display_ctx_name);
+    const name = await this.io.redis!.getset('display:activeDisplayContext', display_ctx_name);
     if (name !== display_ctx_name) {
       const m = await (new DisplayContext(this.io, display_ctx_name, {})).restoreFromDisplayWorkerStates(reset);
-      this.io.mq.publishTopic('display.displayContext.changed', {
+      this.io.rabbit!.publishTopic('display.displayContext.changed', {
         'type': 'displayContextChanged',
         'details': {
           'displayContext': display_ctx_name,
@@ -304,7 +304,7 @@ export class DisplayContextFactory {
       _ps.push(this.io.rabbit!.publishRpc('rpc-display-' + k, cmd).then(m => m.content));
     }
     const m = await Promise.all(_ps);
-    this.io.store.del('display:activeDisplayContext');
+    this.io.redis!.del('display:activeDisplayContext');
     return m;
   }
 
@@ -337,10 +337,10 @@ export class DisplayContextFactory {
     });
   }
 
-  _on(topic: string, handler: (content: Buffer | string | number | object, response: Response) => void): void {
+  _on(topic: string, handler: (content: Buffer | string | number | object, response: RabbitMessage) => void): void {
     this.io.rabbit!.onTopic(topic, (response) => {
       if (handler != null) {
-        handler(response.content, response);
+        handler((response.content as Buffer | string | number), response);
       }
     });
   }

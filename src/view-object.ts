@@ -1,5 +1,5 @@
 import { Io } from '@cisl/io/io';
-import { Response } from '@cisl/io/rabbitmq';
+import { RabbitMessage } from '@cisl/io/types';
 import { ResponseContent } from './types';
 
 export interface DeviceEmulationOptions {
@@ -312,7 +312,7 @@ export class ViewObject {
     return this._postRequest(cmd);
   }
 
-  _on(topic: string, handler: (response: Response) => void): void {
+  _on(topic: string, handler: (response: RabbitMessage) => void): void {
     this.io.rabbit!.onTopic(topic, (response) => {
       if (Buffer.isBuffer(response.content) || typeof response.content !== 'object') {
         throw new Error('invalid response received');
@@ -327,7 +327,7 @@ export class ViewObject {
   * viewObject hidden event
   * @param {viewObjectBasicEventCallback} handler
   */
-  onHidden(handler: (response: Response) => void): void {
+  onHidden(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectHidden.${this.viewId}`, handler);
   }
 
@@ -335,7 +335,7 @@ export class ViewObject {
     * viewObject became visible event
     * @param {viewObjectBasicEventCallback} handler
     */
-  onShown(handler: (response: Response) => void): void {
+  onShown(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectShown.${this.viewId}`, handler);
   }
 
@@ -343,7 +343,7 @@ export class ViewObject {
   * viewObject closed event
   * @param {viewObjectBasicEventCallback} handler
   */
-  onClosed(handler: (response: Response) => void): void {
+  onClosed(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectClosed.${this.viewId}`, handler);
   }
 
@@ -351,7 +351,7 @@ export class ViewObject {
     * viewObject bounds changed event
     * @param {viewObjectBoundsEventCallback} handler
     */
-  onBoundsChanged(handler: (response: Response) => void): void {
+  onBoundsChanged(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectBoundsChanged.${this.viewId}`, handler);
   }
 
@@ -359,7 +359,7 @@ export class ViewObject {
   * viewObject URL changed event
   * @param {viewObjectURLEventCallback} handler
   */
-  onUrlChanged(handler: (response: Response) => void): void {
+  onUrlChanged(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectUrlChanged.${this.viewId}`, handler);
   }
 
@@ -367,7 +367,7 @@ export class ViewObject {
    * viewObject URL reloaded event
    * @param {viewObjectURLEventCallback} handler
    */
-  onUrlReloaded(handler: (response: Response) => void): void {
+  onUrlReloaded(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectUrlChanged.${this.viewId}`, handler);
   }
 
@@ -375,7 +375,7 @@ export class ViewObject {
    * viewObject crashed event
    * @param {viewObjectBasicEventCallback} handler
    */
-  onCrashed(handler: (response: Response) => void): void {
+  onCrashed(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectCrashed.${this.viewId}`, handler);
   }
 
@@ -383,7 +383,7 @@ export class ViewObject {
    * viewObject GPU crashed event
    * @param {viewObjectBasicEventCallback} handler
    */
-  onGPUCrashed(handler: (response: Response) => void): void {
+  onGPUCrashed(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectGPUCrashed.${this.viewId}`, handler);
   }
 
@@ -391,7 +391,7 @@ export class ViewObject {
   * viewObject plugin crashed event
   * @param {viewObjectBasicEventCallback} handler
   */
-  onPluginCrashed(handler: (response: Response) => void): void {
+  onPluginCrashed(handler: (response: RabbitMessage) => void): void {
     this._on(`display.${this.displayContextName}.viewObjectPluginCrashed.${this.viewId}`, handler);
   }
 }
