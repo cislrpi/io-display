@@ -88,5 +88,4 @@ export function registerDisplayWorker(io: Io): void {
   io.display = new DisplayWorker(io);
 }
 
-console.log('what');
 cislio.registerPlugins(registerDisplayWorker);
