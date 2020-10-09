@@ -22,10 +22,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://internal.cisl.rpi.edu/code/libraries/celio-display-worker"
+    "url": "https://github.com/cislrpi/io-display"
   },
   "publishConfig": {
-    "registry": "https://internal.cisl.rpi.edu/npm/"
+    "access": "public"
   },
   "license": "MIT",
   "dependencies": {
@@ -33,7 +33,7 @@
     "lodash.isempty": "^4.4.0"
   },
   "peerDependencies": {
-    "@cisl/io": ">= 1.0.0-dev.19"
+    "@cisl/io": ">=1.0.0-dev.19"
   },
   "devDependencies": {
     "@cisl/io": "^1.0.0-dev.24",
