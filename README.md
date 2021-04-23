@@ -1,3 +1,5 @@
+__NOTE__: This repo was moved into the monorepo in [@cisl/io](https://github.com/cislrpi/io).
+
 # @cisl/io-display-worker
 
 Module for `@cisl/io` that wraps the interface for the display-worker to make it easier to work with.
