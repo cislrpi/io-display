@@ -33,10 +33,10 @@
     "lodash.isempty": "^4.4.0"
   },
   "peerDependencies": {
-    "@cisl/io": ">=1.0.0-dev.19"
+    "@cisl/io": ">=1.0.0"
   },
   "devDependencies": {
-    "@cisl/io": "^1.0.0-dev.24",
+    "@cisl/io": "^1.2.1",
     "@typescript-eslint/eslint-plugin": "^2.3.3",
     "@typescript-eslint/parser": "^2.3.3",
     "eslint": "^6.5.1",

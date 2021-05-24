@@ -1,16 +1,16 @@
-# @cisl/io-display-worker
+# @cisl/io-display
 
 Module for `@cisl/io` that wraps the interface for the display-worker to make it easier to work with.
 
 ## Installation
 ```bash
-npm install @cisl/io-display-worker
+npm install @cisl/io-display
 ```
 
 ## Usage
 ```js
 const io = require('@cisl/io');
-const { registerDisplayWorker } = require('./dist');
+const { registerDisplayWorker } = require('@cisl/io-display');
 
 io.registerPlugins(registerDisplayWorker);
 io.display.openDisplayWorker('main', 'test', content_grid).then((response) => {
