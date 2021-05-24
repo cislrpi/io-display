@@ -18,12 +18,11 @@ interface ContentGrid {
 }
 
 interface DisplayUrlOptions {
-  url: string;
   position?: {
     gridLeft: number;
     gridTop: number;
   };
-  nodeIntegration: boolean;
+  nodeIntegration?: boolean;
   width?: number | string;
   height?: number | string;
   widthFactor?: number;
@@ -43,7 +42,7 @@ export class DisplayWorker {
     this.uniformGridCellSize;
   }
 
-  async openDisplayWorker(name: string, display: string, contentGrid: ContentGrid): Promise<{displayContext: DisplayContext; uniformGridCellSize: UniformGridCellSize}> {
+  async openDisplayWorker(name: string, display: string, contentGrid?: ContentGrid): Promise<{displayContext: DisplayContext; uniformGridCellSize: UniformGridCellSize}> {
     const windows = await this.displayContextFactory.getDisplays();
     let bounds = windows.get(name);
     if (bounds === undefined) {
@@ -54,6 +53,11 @@ export class DisplayWorker {
     this.displayContext = await this.displayContextFactory.create(display, {main: bounds});
     const displayWindow = this.displayContext.getDisplayWindowSync(name);
     await displayWindow.clearContents();
+    if (contentGrid) {
+      await displayWindow.createUniformGrid({
+        contentGrid,
+      });
+    }
     const uniformGridCellSize = await displayWindow.getUniformGridCellSize();
     this.uniformGridCellSize = uniformGridCellSize;
     return {displayContext: this.displayContext, uniformGridCellSize: uniformGridCellSize};
@@ -73,11 +77,16 @@ export class DisplayWorker {
       options
     );
 
-    options.url = url;
-
-    options.width = (options.widthFactor * this.uniformGridCellSize.width) + 'px';
-    options.height = (options.heightFactor * this.uniformGridCellSize.height) + 'px';
-    return await this.displayContext.createViewObject(options, 'main');
+    if (options.width === undefined) {
+      options.width = (options.widthFactor * this.uniformGridCellSize.width) + 'px';
+    }
+    if (options.height === undefined) {
+      options.height = (options.heightFactor * this.uniformGridCellSize.height) + 'px';
+    }
+    return await this.displayContext.createViewObject({
+      ...options,
+      url,
+    }, this.displayContext.name);
   }
 }
 
